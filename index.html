@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Mahtab — Fluorescence Intensity Meter</title>
+<style>
+  :root{
+    --bg:#16181b;
+    --panel:#1c1f23;
+    --panel-2:#24282d;
+    --line:#34393f;
+    --text:#eef0f2;
+    --muted:#8b929b;
+    --accent:#4da8ff;
+    --accent-dim:#235c8c;
+    --accent-soft:rgba(77,168,255,0.14);
+    --yellow:#ffd166;
+    --yellow-dim:#a8843f;
+    --warn:#ffd166;
+    --danger:#ff6b6b;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:
+      radial-gradient(ellipse at top, #1f2329 0%, #16181b 55%);
+    color:var(--text); font-family:var(--sans);
+    min-height:100vh; padding-bottom:90px;
+  }
+  @font-face{
+    font-family:'IBM Plex Mono'; src:local('IBM Plex Mono');
+  }
+
+  /* ---------- header ---------- */
+  header{
+    padding:22px 18px 14px;
+    display:flex; align-items:center; gap:12px;
+    border-bottom:1px solid var(--line);
+  }
+  .logo{
+    width:36px;height:36px;flex-shrink:0;
+    filter:drop-shadow(0 0 7px rgba(77,168,255,0.45));
+  }
+  header h1{
+    font-size:17px; margin:0; letter-spacing:0.02em; font-weight:600;
+  }
+  header p{margin:1px 0 0; font-size:11.5px; color:var(--muted); font-family:var(--mono);}
+
+  /* ---------- tabs ---------- */
+  nav.tabs{
+    position:fixed; bottom:0; left:0; right:0;
+    display:flex; background:var(--panel);
+    border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+    z-index:50;
+  }
+  nav.tabs button{
+    flex:1; background:none; border:none; color:var(--muted);
+    font-family:var(--sans); font-size:11px; padding:12px 4px 10px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    cursor:pointer; letter-spacing:0.02em;
+  }
+  nav.tabs button .ic{font-size:18px; line-height:1;}
+  nav.tabs button.active{color:var(--accent);}
+  nav.tabs button.active .ic{filter:drop-shadow(0 0 6px rgba(77,168,255,0.7));}
+
+  main{max-width:560px; margin:0 auto; padding:16px;}
+  section.view{display:none;}
+  section.view.active{display:block; animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  h2.section-title{
+    font-size:12px; text-transform:uppercase; letter-spacing:0.12em;
+    color:var(--muted); margin:22px 0 10px; font-family:var(--mono);
+  }
+  h2.section-title:first-child{margin-top:0;}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+
+  /* ---------- camera ---------- */
+  .camwrap{
+    position:relative; width:100%; aspect-ratio:3/4; max-height:62vh;
+    background:#000; border-radius:14px; overflow:hidden; border:1px solid var(--line);
+    touch-action:none;
+  }
+  .camwrap video, .camwrap canvas.frame{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  }
+  .camwrap canvas.frame{display:none;}
+  .roi-box{
+    position:absolute; border:2px solid var(--accent);
+    box-shadow:0 0 0 2000px rgba(0,0,0,0.45);
+    cursor:move;
+  }
+  .roi-box::after{
+    content:''; position:absolute; right:-6px; bottom:-6px; width:16px; height:16px;
+    background:var(--accent); border-radius:3px; cursor:nwse-resize;
+  }
+  .roi-label{
+    position:absolute; top:-22px; left:-2px; font-family:var(--mono); font-size:10px;
+    color:var(--accent); background:rgba(0,0,0,0.6); padding:2px 5px; border-radius:4px;
+  }
+  .cam-status{
+    position:absolute; top:10px; left:10px; display:flex; gap:6px; flex-wrap:wrap;
+  }
+  .pill{
+    font-family:var(--mono); font-size:10px; padding:3px 8px; border-radius:20px;
+    background:rgba(0,0,0,0.55); border:1px solid var(--line); color:var(--muted);
+  }
+  .pill.on{color:var(--accent); border-color:var(--accent-dim);}
+  .pill.warn{color:var(--warn); border-color:#5b441f;}
+
+  .controls-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  button.btn{
+    font-family:var(--sans); font-weight:600; font-size:13.5px;
+    border-radius:10px; border:1px solid var(--line); background:var(--panel-2);
+    color:var(--text); padding:11px 16px; cursor:pointer; flex:1;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    transition:transform .08s ease, border-color .15s ease;
+  }
+  button.btn:active{transform:scale(0.97);}
+  button.btn.primary{
+    background:linear-gradient(180deg, var(--yellow) 0%, var(--yellow-dim) 100%);
+    color:#1a1200; border:none;
+  }
+  button.btn.ghost{background:transparent;}
+  button.btn.danger{color:var(--danger); border-color:#4a1f1f;}
+  button.btn:disabled{opacity:0.4; cursor:not-allowed;}
+
+  select, input[type=number], input[type=text]{
+    font-family:var(--mono); background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); border-radius:8px; padding:9px 10px; font-size:13px; width:100%;
+  }
+  label.field{display:block; font-size:11px; color:var(--muted); margin-bottom:5px; font-family:var(--mono);}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+  /* ---------- reading meter ---------- */
+  .meter-readout{
+    text-align:center; padding:18px 0 6px;
+  }
+  .meter-readout .val{
+    font-family:var(--mono); font-size:46px; font-weight:600; color:var(--yellow);
+    text-shadow:0 0 18px rgba(255,209,102,0.4); letter-spacing:-0.02em;
+  }
+  .meter-readout .unit{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:2px;}
+  .bar{height:8px; border-radius:6px; background:var(--panel-2); overflow:hidden; margin-top:14px; border:1px solid var(--line);}
+  .bar-fill{height:100%; background:linear-gradient(90deg, var(--accent-dim), var(--accent) 70%, var(--yellow)); width:0%; transition:width .3s ease;}
+  .channel-readout{display:flex; justify-content:space-between; margin-top:14px; font-family:var(--mono); font-size:12px;}
+  .channel-readout div{text-align:center; flex:1;}
+  .channel-readout .clabel{color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em;}
+  .channel-readout .cval{margin-top:3px; font-size:15px;}
+  .chR .cval{color:#ff6b6b;} .chG .cval{color:#4cde7a;} .chB .cval{color:#4da8ff;} .chL .cval{color:#e7f3ec;}
+
+  /* ---------- calibration ---------- */
+  table.caltable{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px;}
+  table.caltable th{text-align:left; color:var(--muted); font-weight:500; padding:6px 4px; border-bottom:1px solid var(--line); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;}
+  table.caltable td{padding:7px 4px; border-bottom:1px solid var(--line);}
+  table.caltable td input{padding:6px 7px; font-size:12.5px;}
+  table.caltable .rm{color:var(--danger); background:none; border:none; cursor:pointer; font-size:16px; padding:0 6px;}
+  .fit-readout{
+    margin-top:14px; padding:12px; background:var(--panel-2); border-radius:10px;
+    font-family:var(--mono); font-size:12.5px; color:var(--text); line-height:1.7;
+  }
+  .fit-readout .r2-good{color:var(--yellow);}
+  .fit-readout .r2-bad{color:var(--danger);}
+  svg.curve{width:100%; height:180px; margin-top:6px;}
+
+  /* ---------- history ---------- */
+  .hist-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:11px 4px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12.5px;
+  }
+  .hist-row .meta{color:var(--muted); font-size:10.5px;}
+  .hist-row .conc{color:var(--yellow); font-size:15px; font-weight:600;}
+  .empty{text-align:center; color:var(--muted); font-size:13px; padding:30px 10px; font-family:var(--mono);}
+
+  .note{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:8px;}
+  .note b{color:var(--text);}
+  .toast{
+    position:fixed; bottom:96px; left:50%; transform:translateX(-50%) translateY(10px);
+    background:var(--panel-2); border:1px solid var(--accent-dim); color:var(--accent);
+    padding:10px 18px; border-radius:30px; font-family:var(--mono); font-size:12.5px;
+    opacity:0; transition:all .25s ease; pointer-events:none; z-index:100; white-space:nowrap;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="logo" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="15" cy="16" r="11" fill="#ffd166"/>
+    <circle cx="20.5" cy="13" r="11" fill="#16181b"/>
+    <g stroke="#4da8ff" stroke-width="1.6" fill="#4da8ff">
+      <line x1="22" y1="23" x2="29" y2="18"/>
+      <line x1="22" y1="23" x2="24" y2="31"/>
+      <line x1="29" y1="18" x2="24" y2="31"/>
+      <circle cx="22" cy="23" r="2.6"/>
+      <circle cx="29" cy="18" r="2.3"/>
+      <circle cx="24" cy="31" r="2.3"/>
+    </g>
+  </svg>
+  <div>
+    <h1>Mahtab</h1>
+    <p>fluorescence intensity meter</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ CAPTURE VIEW ============ -->
+  <section class="view active" id="view-capture">
+    <h2 class="section-title">Live capture</h2>
+    <div class="card">
+      <div class="camwrap" id="camwrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas class="frame" id="frame"></canvas>
+        <div class="cam-status">
+          <span class="pill" id="pillCam">camera off</span>
+          <span class="pill" id="pillDark">no dark ref</span>
+        </div>
+        <div class="roi-box" id="roiBox" style="left:30%; top:30%; width:40%; height:30%;">
+          <span class="roi-label">ROI</span>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <button class="btn" id="btnStartCam">▣ Start camera</button>
+        <button class="btn ghost" id="btnFlip" title="Switch camera">⟲</button>
+      </div>
+      <div class="controls-row">
+        <button class="btn ghost" id="btnDark">◐ Capture dark reference</button>
+        <button class="btn primary" id="btnCapture">● Measure</button>
+      </div>
+      <p class="note" id="lockNote">For consistent readings: keep the phone fixed in the dark box, use the same distance/zoom every time, and avoid letting the browser change exposure between shots. Tap the box to drag it, drag the bottom-right corner to resize.</p>
+    </div>
+
+    <h2 class="section-title">Reading</h2>
+    <div class="card">
+      <div class="meter-readout">
+        <div class="val" id="readoutVal">—</div>
+        <div class="unit" id="readoutUnit">no measurement yet</div>
+      </div>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="channel-readout">
+        <div class="chR"><div class="clabel">Red</div><div class="cval" id="vR">–</div></div>
+        <div class="chG"><div class="clabel">Green</div><div class="cval" id="vG">–</div></div>
+        <div class="chB"><div class="clabel">Blue</div><div class="cval" id="vB">–</div></div>
+        <div class="chL"><div class="clabel">Lumin.</div><div class="cval" id="vL">–</div></div>
+      </div>
+      <div class="grid2" style="margin-top:14px;">
+        <div>
+          <label class="field">Analysis channel</label>
+          <select id="selChannel">
+            <option value="L">Luminance (recommended)</option>
+            <option value="G">Green</option>
+            <option value="R">Red</option>
+            <option value="B">Blue</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">Sample label (optional)</label>
+          <input type="text" id="sampleLabel" placeholder="e.g. Tube 3">
+        </div>
+      </div>
+      <div class="controls-row">
+        <button class="btn primary" id="btnSave" disabled>＋ Save to history</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CALIBRATION VIEW ============ -->
+  <section class="view" id="view-cal">
+    <h2 class="section-title">Calibration standards</h2>
+    <div class="card">
+      <p class="note">Measure a series of standard samples with <b>known concentration</b> using the Capture tab, or enter values directly below. A minimum of <b>3 calibration points</b> is required. Mahtab fits a line (intensity → concentration) and uses it to convert future readings.</p>
+      <table class="caltable" id="calTable">
+        <thead><tr><th>Conc.</th><th>Intensity</th><th></th></tr></thead>
+        <tbody id="calBody"></tbody>
+      </table>
+      <div class="controls-row">
+        <button class="btn ghost" id="btnAddRow">＋ Add row</button>
+        <button class="btn ghost" id="btnUseReading">↓ Use last reading</button>
+      </div>
+      <div class="grid2" style="margin-top:12px;">
+        <div>
+          <label class="field">Concentration unit</label>
+          <input type="text" id="concUnit" placeholder="µg/mL" value="µg/mL">
+        </div>
+        <div>
+          <label class="field">Fit type</label>
+          <select id="fitType">
+            <option value="linear">Linear (y = mx + b)</option>
+            <option value="linear0">Linear through origin (y = mx)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Curve</h2>
+    <div class="card">
+      <svg class="curve" id="curveSvg" viewBox="0 0 320 180" preserveAspectRatio="none"></svg>
+      <div class="fit-readout" id="fitReadout">Add at least 3 calibration points to compute a curve.</div>
+      <div class="controls-row">
+        <button class="btn danger ghost" id="btnClearCal">Clear calibration</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY VIEW ============ -->
+  <section class="view" id="view-history">
+    <h2 class="section-title">Measurement log</h2>
+    <div class="card" id="histCard">
+      <div class="empty" id="histEmpty">No measurements saved yet.<br>Capture a reading and tap "Save to history".</div>
+      <div id="histList"></div>
+      <div class="controls-row" style="margin-top:4px;">
+        <button class="btn ghost" id="btnExport">⇩ Export CSV</button>
+        <button class="btn danger ghost" id="btnClearHist">Clear log</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabs">
+  <button class="active" data-view="capture"><span class="ic">◉</span>Capture</button>
+  <button data-view="cal"><span class="ic">∿</span>Calibrate</button>
+  <button data-view="history"><span class="ic">≡</span>History</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- storage ---------------- */
+  const STORE_KEY = 'mahtab_v1';
+  function loadStore(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return {cal:[], hist:[], settings:{channel:'L', concUnit:'µg/mL', fitType:'linear'}};
+      const p = JSON.parse(raw);
+      p.cal = p.cal || []; p.hist = p.hist || [];
+      p.settings = p.settings || {channel:'L', concUnit:'µg/mL', fitType:'linear'};
+      return p;
+    }catch(e){ return {cal:[], hist:[], settings:{channel:'L', concUnit:'µg/mL', fitType:'linear'}}; }
+  }
+  function saveStore(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+  const state = loadStore();
+
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(()=> t.classList.remove('show'), 1800);
+  }
+
+  /* ---------------- tabs ---------------- */
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('section.view').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('view-'+b.dataset.view).classList.add('active');
+      if(b.dataset.view==='cal') renderCal();
+      if(b.dataset.view==='history') renderHist();
+    });
+  });
+
+  /* ---------------- camera ---------------- */
+  const video = document.getElementById('video');
+  const frameCanvas = document.getElementById('frame');
+  const camwrap = document.getElementById('camwrap');
+  const roiBox = document.getElementById('roiBox');
+  let stream = null, facing = 'environment';
+  let darkRef = null; // {R,G,B,L}
+
+  document.getElementById('btnStartCam').addEventListener('click', startCamera);
+  document.getElementById('btnFlip').addEventListener('click', ()=>{
+    facing = facing === 'environment' ? 'user' : 'environment';
+    startCamera();
+  });
+
+  async function startCamera(){
+    try{
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode: facing, width:{ideal:1280}, height:{ideal:960} },
+        audio:false
+      });
+      video.srcObject = stream;
+      document.getElementById('pillCam').textContent = 'camera on';
+      document.getElementById('pillCam').classList.add('on');
+      // try to lock exposure/white balance if the platform allows it
+      const track = stream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const constraints = {};
+      if(caps.exposureMode && caps.exposureMode.includes('manual')) constraints.exposureMode = 'manual';
+      if(caps.whiteBalanceMode && caps.whiteBalanceMode.includes('manual')) constraints.whiteBalanceMode = 'manual';
+      if(caps.focusMode && caps.focusMode.includes('manual')) constraints.focusMode = 'manual';
+      if(Object.keys(constraints).length){
+        try{ await track.applyConstraints({advanced:[constraints]}); }catch(e){}
+      }
+    }catch(err){
+      toast('Camera error: ' + err.message);
+    }
+  }
+
+  /* ---------------- ROI drag/resize ---------------- */
+  (function setupRoi(){
+    let mode = null, startX, startY, startRect;
+    function pos(e){
+      const p = e.touches ? e.touches[0] : e;
+      return {x:p.clientX, y:p.clientY};
+    }
+    roiBox.addEventListener('pointerdown', (e)=>{
+      const rect = roiBox.getBoundingClientRect();
+      const wrapRect = camwrap.getBoundingClientRect();
+      const onCorner = (e.clientX - rect.right > -20) && (e.clientY - rect.bottom > -20);
+      mode = onCorner ? 'resize' : 'move';
+      startX = e.clientX; startY = e.clientY;
+      startRect = {left:rect.left-wrapRect.left, top:rect.top-wrapRect.top, w:rect.width, h:rect.height};
+      roiBox.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    roiBox.addEventListener('pointermove', (e)=>{
+      if(!mode) return;
+      const wrapRect = camwrap.getBoundingClientRect();
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if(mode === 'move'){
+        let left = startRect.left + dx, top = startRect.top + dy;
+        left = Math.max(0, Math.min(wrapRect.width - startRect.w, left));
+        top = Math.max(0, Math.min(wrapRect.height - startRect.h, top));
+        roiBox.style.left = (left/wrapRect.width*100)+'%';
+        roiBox.style.top = (top/wrapRect.height*100)+'%';
+      } else {
+        let w = Math.max(30, startRect.w + dx), h = Math.max(30, startRect.h + dy);
+        w = Math.min(w, wrapRect.width - startRect.left);
+        h = Math.min(h, wrapRect.height - startRect.top);
+        roiBox.style.width = (w/wrapRect.width*100)+'%';
+        roiBox.style.height = (h/wrapRect.height*100)+'%';
+      }
+      e.preventDefault();
+    });
+    roiBox.addEventListener('pointerup', ()=>{ mode = null; });
+    roiBox.addEventListener('pointercancel', ()=>{ mode = null; });
+  })();
+
+  function getRoiPixelRect(){
+    const wrapRect = camwrap.getBoundingClientRect();
+    const r = roiBox.getBoundingClientRect();
+    const scaleX = video.videoWidth / wrapRect.width;
+    const scaleY = video.videoHeight / wrapRect.height;
+    return {
+      x: Math.round((r.left - wrapRect.left) * scaleX),
+      y: Math.round((r.top - wrapRect.top) * scaleY),
+      w: Math.round(r.width * scaleX),
+      h: Math.round(r.height * scaleY)
+    };
+  }
+
+  function analyzeFrame(){
+    if(!video.videoWidth){ toast('Start the camera first'); return null; }
+    frameCanvas.width = video.videoWidth;
+    frameCanvas.height = video.videoHeight;
+    const ctx = frameCanvas.getContext('2d', {willReadFrequently:true});
+    ctx.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
+    const roi = getRoiPixelRect();
+    const rx = Math.max(0, roi.x), ry = Math.max(0, roi.y);
+    const rw = Math.min(roi.w, frameCanvas.width - rx);
+    const rh = Math.min(roi.h, frameCanvas.height - ry);
+    if(rw <= 0 || rh <= 0) return null;
+    const data = ctx.getImageData(rx, ry, rw, rh).data;
+    let sR=0, sG=0, sB=0, n=0;
+    const step = 4 * Math.max(1, Math.floor((rw*rh)/40000)); // subsample for perf on big frames
+    for(let i=0; i<data.length; i+=step){
+      sR += data[i]; sG += data[i+1]; sB += data[i+2]; n++;
+    }
+    const R = sR/n, G = sG/n, B = sB/n;
+    const L = 0.2126*R + 0.7152*G + 0.0722*B;
+    return {R,G,B,L};
+  }
+
+  let lastReading = null;
+
+  document.getElementById('btnDark').addEventListener('click', ()=>{
+    const r = analyzeFrame();
+    if(!r) return;
+    darkRef = r;
+    const p = document.getElementById('pillDark');
+    p.textContent = 'dark ref set'; p.classList.add('on');
+    toast('Dark reference captured');
+  });
+
+  document.getElementById('btnCapture').addEventListener('click', ()=>{
+    const r = analyzeFrame();
+    if(!r) return;
+    let corrected = {R:r.R, G:r.G, B:r.B, L:r.L};
+    if(darkRef){
+      corrected.R = Math.max(0, r.R - darkRef.R);
+      corrected.G = Math.max(0, r.G - darkRef.G);
+      corrected.B = Math.max(0, r.B - darkRef.B);
+      corrected.L = Math.max(0, r.L - darkRef.L);
+    }
+    lastReading = corrected;
+    document.getElementById('vR').textContent = corrected.R.toFixed(1);
+    document.getElementById('vG').textContent = corrected.G.toFixed(1);
+    document.getElementById('vB').textContent = corrected.B.toFixed(1);
+    document.getElementById('vL').textContent = corrected.L.toFixed(1);
+    const ch = document.getElementById('selChannel').value;
+    const val = corrected[ch];
+    document.getElementById('barFill').style.width = Math.min(100, val/2.55) + '%';
+    const conc = concentrationFor(val);
+    if(conc !== null){
+      document.getElementById('readoutVal').textContent = conc.toFixed(3);
+      document.getElementById('readoutUnit').textContent = (state.settings.concUnit || 'units') + '  ·  intensity ' + val.toFixed(1);
+    } else {
+      document.getElementById('readoutVal').textContent = val.toFixed(1);
+      document.getElementById('readoutUnit').textContent = 'raw intensity (0–255) · no calibration yet';
+    }
+    document.getElementById('btnSave').disabled = false;
+  });
+
+  document.getElementById('selChannel').addEventListener('change', (e)=>{
+    state.settings.channel = e.target.value; saveStore();
+    document.getElementById('btnCapture').click;
+  });
+  document.getElementById('selChannel').value = state.settings.channel;
+
+  /* ---------------- save to history ---------------- */
+  document.getElementById('btnSave').addEventListener('click', ()=>{
+    if(!lastReading) return;
+    const ch = document.getElementById('selChannel').value;
+    const val = lastReading[ch];
+    const conc = concentrationFor(val);
+    state.hist.unshift({
+      t: Date.now(),
+      label: document.getElementById('sampleLabel').value || '',
+      channel: ch,
+      R: lastReading.R, G: lastReading.G, B: lastReading.B, L: lastReading.L,
+      intensity: val,
+      concentration: conc
+    });
+    saveStore();
+    toast('Saved to history');
+    document.getElementById('sampleLabel').value = '';
+  });
+
+  /* ---------------- calibration ---------------- */
+  const calBody = document.getElementById('calBody');
+  document.getElementById('concUnit').value = state.settings.concUnit;
+  document.getElementById('fitType').value = state.settings.fitType;
+  document.getElementById('concUnit').addEventListener('input', (e)=>{
+    state.settings.concUnit = e.target.value; saveStore(); renderCal();
+  });
+  document.getElementById('fitType').addEventListener('change', (e)=>{
+    state.settings.fitType = e.target.value; saveStore(); renderCal();
+  });
+
+  function renderCal(){
+    calBody.innerHTML = '';
+    state.cal.forEach((row, i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="number" step="any" value="${row.c}" data-i="${i}" data-f="c"></td>
+        <td><input type="number" step="any" value="${row.i}" data-i="${i}" data-f="i"></td>
+        <td><button class="rm" data-i="${i}">×</button></td>`;
+      calBody.appendChild(tr);
+    });
+    calBody.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input', (e)=>{
+        const i = +e.target.dataset.i, f = e.target.dataset.f;
+        state.cal[i][f] = parseFloat(e.target.value) || 0;
+        saveStore(); drawCurve();
+      });
+    });
+    calBody.querySelectorAll('.rm').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        state.cal.splice(+e.target.dataset.i, 1);
+        saveStore(); renderCal();
+      });
+    });
+    drawCurve();
+  }
+
+  document.getElementById('btnAddRow').addEventListener('click', ()=>{
+    state.cal.push({c:0, i:0});
+    saveStore(); renderCal();
+  });
+
+  document.getElementById('btnUseReading').addEventListener('click', ()=>{
+    if(!lastReading){ toast('Take a measurement first'); return; }
+    const ch = document.getElementById('selChannel').value;
+    state.cal.push({c:0, i: +lastReading[ch].toFixed(2)});
+    saveStore(); renderCal();
+    toast('Added — set the known concentration');
+  });
+
+  document.getElementById('btnClearCal').addEventListener('click', ()=>{
+    if(confirm('Clear all calibration points?')){ state.cal = []; saveStore(); renderCal(); }
+  });
+
+  function fitLinear(points, throughOrigin){
+    const n = points.length;
+    if(throughOrigin){
+      let sxy=0, sxx=0;
+      points.forEach(p=>{ sxy += p.i*p.c; sxx += p.i*p.i; });
+      const m = sxx === 0 ? 0 : sxy/sxx;
+      const b = 0;
+      // R^2
+      const meanC = points.reduce((a,p)=>a+p.c,0)/n;
+      let ssRes=0, ssTot=0;
+      points.forEach(p=>{ const pred = m*p.i; ssRes += (p.c-pred)**2; ssTot += (p.c-meanC)**2; });
+      const r2 = ssTot === 0 ? 1 : 1 - ssRes/ssTot;
+      return {m,b,r2};
+    } else {
+      let sx=0, sy=0, sxy=0, sxx=0;
+      points.forEach(p=>{ sx+=p.i; sy+=p.c; sxy+=p.i*p.c; sxx+=p.i*p.i; });
+      const denom = (n*sxx - sx*sx);
+      const m = denom === 0 ? 0 : (n*sxy - sx*sy)/denom;
+      const b = (sy - m*sx)/n;
+      const meanC = sy/n;
+      let ssRes=0, ssTot=0;
+      points.forEach(p=>{ const pred = m*p.i+b; ssRes += (p.c-pred)**2; ssTot += (p.c-meanC)**2; });
+      const r2 = ssTot === 0 ? 1 : 1 - ssRes/ssTot;
+      return {m,b,r2};
+    }
+  }
+
+  function getFit(){
+    const pts = state.cal.filter(r=> !isNaN(r.c) && !isNaN(r.i));
+    if(pts.length < 3) return null;
+    return fitLinear(pts.map(p=>({c:p.c, i:p.i})), state.settings.fitType === 'linear0');
+  }
+
+  function concentrationFor(intensity){
+    const fit = getFit();
+    if(!fit) return null;
+    return fit.m * intensity + fit.b;
+  }
+
+  function drawCurve(){
+    const svg = document.getElementById('curveSvg');
+    const readout = document.getElementById('fitReadout');
+    const pts = state.cal.filter(r=> !isNaN(r.c) && !isNaN(r.i) && (r.c!==0 || r.i!==0));
+    svg.innerHTML = '';
+    if(state.cal.length < 3){
+      readout.innerHTML = 'Add at least 3 calibration points to compute a curve.';
+      return;
+    }
+    const fit = getFit();
+    const allI = state.cal.map(p=>p.i), allC = state.cal.map(p=>p.c);
+    const minI = Math.min(...allI, 0), maxI = Math.max(...allI, 1);
+    const minC = Math.min(...allC, 0), maxC = Math.max(...allC, 1);
+    const pad = 24, W = 320, H = 180;
+    function X(i){ return pad + (i-minI)/(maxI-minI||1) * (W-2*pad); }
+    function Y(c){ return H-pad - (c-minC)/(maxC-minC||1) * (H-2*pad); }
+
+    // axes
+    const ns = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs){ const e = document.createElementNS(ns, tag); for(const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+    svg.appendChild(el('line', {x1:pad,y1:H-pad,x2:W-pad,y2:H-pad,stroke:'#34393f','stroke-width':1}));
+    svg.appendChild(el('line', {x1:pad,y1:pad,x2:pad,y2:H-pad,stroke:'#34393f','stroke-width':1}));
+
+    // fit line
+    if(fit){
+      const x1 = minI, x2 = maxI;
+      const y1 = fit.m*x1 + fit.b, y2 = fit.m*x2 + fit.b;
+      svg.appendChild(el('line', {x1:X(x1),y1:Y(y1),x2:X(x2),y2:Y(y2), stroke:'#4da8ff', 'stroke-width':2, opacity:0.9}));
+    }
+    // points
+    state.cal.forEach(p=>{
+      svg.appendChild(el('circle', {cx:X(p.i), cy:Y(p.c), r:4, fill:'#15181b', stroke:'#4da8ff', 'stroke-width':2}));
+    });
+
+    if(fit){
+      const r2cls = fit.r2 >= 0.95 ? 'r2-good' : 'r2-bad';
+      const eqn = state.settings.fitType === 'linear0'
+        ? `conc = ${fit.m.toFixed(4)} × intensity`
+        : `conc = ${fit.m.toFixed(4)} × intensity ${fit.b>=0?'+':'-'} ${Math.abs(fit.b).toFixed(3)}`;
+      readout.innerHTML = `${eqn}<br>R² = <span class="${r2cls}">${fit.r2.toFixed(4)}</span> · ${state.cal.length} points<br>${fit.r2 < 0.9 ? '⚠ low fit quality — add more standards or check ROI consistency.' : 'fit looks solid.'}`;
+    } else {
+      readout.innerHTML = 'Need varying intensity values to compute a fit.';
+    }
+  }
+
+  /* ---------------- history ---------------- */
+  function renderHist(){
+    const list = document.getElementById('histList');
+    const empty = document.getElementById('histEmpty');
+    list.innerHTML = '';
+    if(state.hist.length === 0){ empty.style.display='block'; return; }
+    empty.style.display='none';
+    state.hist.forEach((h)=>{
+      const d = new Date(h.t);
+      const row = document.createElement('div');
+      row.className = 'hist-row';
+      const concStr = h.concentration !== null && h.concentration !== undefined
+        ? h.concentration.toFixed(3) + ' ' + (state.settings.concUnit||'')
+        : h.intensity.toFixed(1) + ' raw';
+      row.innerHTML = `<div>
+          <div class="conc">${concStr}</div>
+          <div class="meta">${h.label ? h.label+' · ' : ''}${d.toLocaleString()} · ch ${h.channel}</div>
+        </div>`;
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('btnClearHist').addEventListener('click', ()=>{
+    if(confirm('Clear the entire measurement log?')){ state.hist = []; saveStore(); renderHist(); }
+  });
+
+  document.getElementById('btnExport').addEventListener('click', ()=>{
+    if(state.hist.length === 0){ toast('Nothing to export'); return; }
+    let csv = 'timestamp,label,channel,R,G,B,L,intensity,concentration,unit\n';
+    state.hist.forEach(h=>{
+      csv += [new Date(h.t).toISOString(), h.label, h.channel, h.R.toFixed(2), h.G.toFixed(2), h.B.toFixed(2), h.L.toFixed(2), h.intensity.toFixed(2), (h.concentration!==null&&h.concentration!==undefined)?h.concentration.toFixed(4):'', state.settings.concUnit].join(',') + '\n';
+    });
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'mahtab_measurements.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  renderCal();
+  renderHist();
+})();
+</script>
+</body>
+</html>
